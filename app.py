@@ -36,15 +36,15 @@ DB.create_tables([Prediction], safe=True)
 # Unpickle the previously-trained model
 
 
-with open('columns.json') as fh:
+with open(os.path.join('columns.json')) as fh:
     columns = json.load(fh)
 
 
-with open('pipeline.pickle', 'rb') as fh:
+with open(os.path.join('pipeline.pickle'), 'rb') as fh:
     pipeline = joblib.load(fh)
 
 
-with open('dtypes.pickle', 'rb') as fh:
+with open(os.path.join('dtypes.pickle'), 'rb') as fh:
     dtypes = pickle.load(fh)
 
 
@@ -54,187 +54,6 @@ with open('dtypes.pickle', 'rb') as fh:
 ########################################
 # Input validation functions
 
-
-def check_request(request):
-    """
-        Validates that our request is well formatted
-        
-        Returns:
-        - assertion value: True if request is ok, False otherwise
-        - error message: empty if request is ok, False otherwise
-    """
-    
-    if "observation_id" not in request:
-        error = "Field `observation_id` missing from request: {}".format(request)
-        return False, error
-    
-    if "data" not in request:
-        error = "Field `data` missing from request: {}".format(request)
-        return False, error
-    
-    return True, ""
-
-
-
-def check_valid_column(observation):
-    """
-        Validates that our observation only has valid columns
-        
-        Returns:
-        - assertion value: True if all provided columns are valid, False otherwise
-        - error message: empty if all provided columns are valid, False otherwise
-    """
-    
-    valid_columns = {'age', 'sex', 'cp', 'trestbps', 'fbs', 'restecg', 'oldpeak', 'ca', 'thal',}
-    
-    keys = set(observation.keys())
-    
-    if len(valid_columns - keys) > 0: 
-        missing = valid_columns - keys
-        error = "Missing columns: {}".format(missing)
-        return False, error
-    
-    if len(keys - valid_columns) > 0: 
-        extra = keys - valid_columns
-        error = "Unrecognized columns provided: {}".format(extra)
-        return False, error    
-
-    return True, ""
-
-
-
-def check_categorical_values(observation):
-    """
-        Validates that all categorical fields are in the observation and values are valid
-        
-        Returns:
-        - assertion value: True if all provided categorical columns contain valid values, 
-                           False otherwise
-        - error message: empty if all provided columns are valid, False otherwise
-    """
-    
-    valid_category_map = {
-        "sex": [0,1],
-        "ca": [0,1,2,3]
-    }
-    
-    for key, valid_categories in valid_category_map.items():
-        if key in observation:
-            value = observation[key]
-            if value not in valid_categories:
-                error = "Invalid value provided for {}: {}. Allowed values are: {}".format(
-                    key, value, ",".join(["'{}'".format(v) for v in valid_categories]))
-                return False, error
-        else:
-            error = "Categorical field {} missing"
-            return False, error
-
-    return True, ""
-
-
-def check_hour(observation):
-    """
-        Validates that observation contains valid hour value 
-        
-        Returns:
-        - assertion value: True if hour is valid, False otherwise
-        - error message: empty if hour is valid, False otherwise
-    """
-    
-    hour = observation.get("hour")
-        
-    if not hour:
-        error = "Field `hour` missing"
-        return False, error
-
-    if not isinstance(hour, int):
-        error = "Field `hour` is not an integer"
-        return False, error
-    
-    if hour < 0 or hour > 24:
-        error = "Field `hour` is not between 0 and 24"
-        return False, error
-
-    return True, ""
-
-
-def check_age(observation):
-    """
-        Validates that observation contains valid age value 
-        
-        Returns:
-        - assertion value: True if age is valid, False otherwise
-        - error message: empty if age is valid, False otherwise
-    """
-    
-    age = observation.get("age")
-        
-    if not age: 
-        error = "Field `age` missing"
-        return False, error
-
-    if not isinstance(age, int):
-        error = "Field `age` is not an integer"
-        return False, error
-    
-    if age < 10 or age > 100:
-        error = "Field `age` is not between 10 and 100. Value provided: {}".format(age)
-        return False, error
-
-    return True, ""
-
-
-def check_bloodpressure(observation):
-    """
-        Validates that observation contains valid trestbps value 
-        
-        Returns:
-        - assertion value: True if trestbps is valid, False otherwise
-        - error message: empty if trestbps is valid, False otherwise
-    """
-    
-    bloodpressure = observation.get("trestbps")
-        
-    if not bloodpressure: 
-        error = "Field `trestbps` missing"
-        return False, error
-
-    if not isinstance(bloodpressure, int):
-        error = "Field `trestbps` is not an integer"
-        return False, error
-    
-    if bloodpressure < 50 or bloodpressure > 200:
-        error = "Field `trestbps` is not between 50 and 200. Value provided: {}".format(bloodpressure)
-        return False, error
-
-    return True, ""
-
-
-def check_stdepression(observation):
-    """
-        Validates that observation contains valid oldpeak value 
-        
-        Returns:
-        - assertion value: True if oldpeak is valid, False otherwise
-        - error message: empty if oldpeak is valid, False otherwise
-    """
-    
-    oldpeak = observation.get("oldpeak")
-        
-    if oldpeak is None: 
-        error = "Field `oldpeak` missing"
-        return False, error
-    
-    if not isinstance(oldpeak, (int, float)):
-        error = "Field `oldpeak` is not an integer or a float"
-        return False, error
-
-
-    if  oldpeak < 0 or oldpeak > 10:
-        error = "Field `oldpeak` is not not between 0 and 10. Value provided: {}".format(oldpeak)
-        return False, error
-
-    return True, ""
 
 
 # End input validation functions
@@ -248,51 +67,78 @@ app = Flask(__name__)
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    
     obs_dict = request.get_json()
-  
-    request_ok, error = check_request(obs_dict)
-    if not request_ok:
-        response = {'error': error}
-        return jsonify(response)
-
-    _id = obs_dict['observation_id']
-    observation = obs_dict['data']
-
-    columns_ok, error = check_valid_column(observation)
-    if not columns_ok:
-        response = {'error': error}
-        return jsonify(response)
-
-    categories_ok, error = check_categorical_values(observation)
-    if not categories_ok:
-        response = {'error': error}
-        return jsonify(response)
     
-    age_ok, error = check_age(observation)
-    if not age_ok:
-        response = {'error': error}
-        return jsonify(response)
-    
-    bloodpressure_ok, error = check_bloodpressure(observation)
-    if not bloodpressure_ok:
-        response = {'error': error}
-        return jsonify(response)
-    
-    stdepression_ok, error = check_stdepression(observation)
-    if not stdepression_ok:
-        response = {'error': error}
-        return jsonify(response)
- 
+    # checking that there is an id
 
+    try:
+        _id = obs_dict['observation_id']
+    except:
+        _id = None
+        return ({"observation_id": _id,
+                "error": "observation_id is missing"})
+    
+    # checking that the data is there
+    try:
+        observation = obs_dict['data']
+    except:
+        return {"observation_id": _id,
+                "error": "data is missing"}
+    
+    # checking for missing columns
+    request_columns = list(obs_dict['data'].keys())
+    
+    for column in columns:
+        if column not in request_columns:
+            return {"observation_id": _id,
+                    "error": "{0} is missing".format(column)}
+    
+    # checking for extra columns
+    for column in request_columns:
+        if column not in columns:
+            return {"observation_id": _id,
+                    "error": "{0} is an extra column".format(column)}
+    
+    # checking valid categorical inputs:
+    if obs_dict['data']['sex'] not in ["Male", "Female"]:
+        return {"observation_id": _id,
+                "error": "{0} is not a valid option for sex".format(obs_dict['data']['sex'])}
+    
+    if obs_dict['data']['race'] not in ["White", "Black", "Asian-Pac-Islander", "Amer-Indian-Eskimo", "Other"]:
+        return {"observation_id": _id,
+                "error": "{0} is not a valid option for race".format(obs_dict['data']['race'])}
+    
+    # checking valid numerical inputs:
+    if obs_dict['data']['age'] <= 0 or obs_dict['data']['age'] >100:
+        return {"observation_id": _id,
+                "error": "{0} is not a valid option for age".format(obs_dict['data']['age'])}
+    
+    if obs_dict['data']['capital-gain'] < 0:
+        return {"observation_id": _id,
+                "error": "{0} is not a valid option for capital-gain".format(obs_dict['data']['capital-gain'])}
+    
+    if obs_dict['data']['capital-loss'] < 0:
+        return {"observation_id": _id,
+                "error": "{0} is not a valid option for capital-loss".format(obs_dict['data']['capital-loss'])}
+    
+    if obs_dict['data']['hours-per-week'] <= 0 or obs_dict['data']['hours-per-week'] >100:
+        return {"observation_id": _id,
+            "error": "{0} is not a valid option for hours-per-week".format(obs_dict['data']['hours-per-week'])}
+    
     obs = pd.DataFrame([observation], columns=columns).astype(dtypes)
-    proba = pipeline.predict_proba(obs)[0, 1]
     prediction = pipeline.predict(obs)[0]
-    response = {'prediction': bool(prediction), 'probability': proba}
+    probability = pipeline.predict_proba(obs)[0][0]
+    response = {"observation_id": _id,
+                "prediction": bool(prediction),
+                "probability": probability}
+    
     p = Prediction(
         observation_id=_id,
-        proba=proba,
+        proba=probability,
         observation=request.data,
     )
+
     try:
         p.save()
     except IntegrityError:
@@ -300,21 +146,22 @@ def predict():
         response["error"] = error_msg
         print(error_msg)
         DB.rollback()
+    
     return jsonify(response)
+
 
     
 @app.route('/update', methods=['POST'])
 def update():
-    obs = request.get_json()
+    obs = obs_dict.get_json()
     try:
-        p = Prediction.get(Prediction.observation_id == obs['observation_id'])
+        p = Prediction.get(Prediction.observation_id == obs['id'])
         p.true_class = obs['true_class']
         p.save()
         return jsonify(model_to_dict(p))
     except Prediction.DoesNotExist:
-        error_msg = 'Observation ID: "{}" does not exist'.format(obs['observation_id'])
+        error_msg = 'Observation ID: "{}" does not exist'.format(obs['id'])
         return jsonify({'error': error_msg})
-
 
     
 if __name__ == "__main__":
